@@ -71,6 +71,9 @@ private[spark] class ResultTask[T, U](
 
   override def runTask(context: TaskContext): U = {
     // Deserialize the RDD and the func using the broadcast variables.
+    val q = SparkEnv.get.conf.get("spark.app.name","unknown")
+    DebugMetrics.set(q, "ResultTask",jobId.getOrElse(-1),stageId,context.taskAttemptId())
+    println(s"ResultTask ${jobId} ${stageId} ${outputId} ${context.taskAttemptId}")
     val threadMXBean = ManagementFactory.getThreadMXBean
     val deserializeStartTime = System.currentTimeMillis()
     val deserializeStartCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {

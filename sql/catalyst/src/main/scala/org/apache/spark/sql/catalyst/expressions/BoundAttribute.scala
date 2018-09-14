@@ -69,9 +69,12 @@ case class BoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
       oev.code = ""
       ev.copy(code = code)
     } else if (nullable) {
+      ctx.addMutableState("boolean", ev.isNull, "");
+      ctx.addMutableState(javaType, ev.value, "");
       ev.copy(code = s"""
-        boolean ${ev.isNull} = ${ctx.INPUT_ROW}.isNullAt($ordinal);
-        $javaType ${ev.value} = ${ev.isNull} ? ${ctx.defaultValue(dataType)} : ($value);""")
+        // BoundAttribute.scala doGenCode
+        ${ev.isNull} = ${ctx.INPUT_ROW}.isNullAt($ordinal);
+        ${ev.value} = ${ev.isNull} ? ${ctx.defaultValue(dataType)} : ($value);""")
     } else {
       ev.copy(code = s"""$javaType ${ev.value} = $value;""", isNull = "false")
     }

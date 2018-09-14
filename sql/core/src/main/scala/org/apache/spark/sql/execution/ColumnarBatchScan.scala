@@ -53,9 +53,11 @@ private[sql] trait ColumnarBatchScan extends CodegenSupport {
     val valueVar = ctx.freshName("value")
     val str = s"columnVector[$columnVar, $ordinal, ${dataType.simpleString}]"
     val code = s"${ctx.registerComment(str)}\n" + (if (nullable) {
+    ctx.addMutableState("boolean", isNullVar, "")
+    ctx.addMutableState(javaType, valueVar, "")
       s"""
-        boolean $isNullVar = $columnVar.isNullAt($ordinal);
-        $javaType $valueVar = $isNullVar ? ${ctx.defaultValue(dataType)} : ($value);
+        $isNullVar = $columnVar.isNullAt($ordinal);
+        $valueVar = $isNullVar ? ${ctx.defaultValue(dataType)} : ($value);
       """
     } else {
       s"$javaType $valueVar = $value;"
@@ -111,6 +113,7 @@ private[sql] trait ColumnarBatchScan extends CodegenSupport {
     val columnsBatchInput = (output zip colVars).map { case (attr, colVar) =>
       genCodeColumnVector(ctx, colVar, rowidx, attr.dataType, attr.nullable)
     }
+    ctx.addMutableState("int", rowidx, s"$rowidx = 0;")
     val localIdx = ctx.freshName("localIdx")
     val localEnd = ctx.freshName("localEnd")
     val numRows = ctx.freshName("numRows")
@@ -127,7 +130,7 @@ private[sql] trait ColumnarBatchScan extends CodegenSupport {
        |  int $numRows = $batch.numRows();
        |  int $localEnd = $numRows - $idx;
        |  for (int $localIdx = 0; $localIdx < $localEnd; $localIdx++) {
-       |    int $rowidx = $idx + $localIdx;
+       |    $rowidx = $idx + $localIdx;
        |    ${consume(ctx, columnsBatchInput).trim}
        |    $shouldStop
        |  }

@@ -18,6 +18,7 @@
 package org.apache.spark.sql.catalyst.expressions.codegen
 
 import java.io.ByteArrayInputStream
+import java.io.{ByteArrayInputStream, File, PrintWriter, StringWriter}
 import java.util.{Map => JavaMap}
 
 import scala.collection.JavaConverters._
@@ -34,6 +35,7 @@ import org.codehaus.janino.{ByteArrayClassLoader, ClassBodyEvaluator, JaninoRunt
 import org.codehaus.janino.util.ClassFile
 
 import org.apache.spark.{SparkEnv, TaskContext, TaskKilledException}
+import org.apache.spark.{DebugMetrics, SparkEnv}
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.internal.Logging
 import org.apache.spark.metrics.source.CodegenMetrics
@@ -929,6 +931,11 @@ abstract class CodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends Loggin
 }
 
 object CodeGenerator extends Logging {
+
+
+  var cnt = 0;
+  val executorId = SparkEnv.get.executorId;
+  var query = "NotDefined"
   /**
    * Compile the Java source code into a Java class, using Janino.
    */
@@ -1053,6 +1060,60 @@ object CodeGenerator extends Logging {
     .build(
       new CacheLoader[CodeAndComment, GeneratedClass]() {
         override def load(code: CodeAndComment): GeneratedClass = {
+          cnt += 1;
+          val q = DebugMetrics.getQuery()
+          val j = DebugMetrics.getJobId()
+          val s = DebugMetrics.getStageId()
+          val t = DebugMetrics.getTaskType()
+          val taskId = DebugMetrics.getTaskId()
+          val hc = code.hashCode()
+          val fname = s"${q}_jobid_${j}_stageid_${s}_taskid_${taskId}_${t}_${cnt}_execid_${executorId}_${hc}"
+          var code1 : CodeAndComment = code;
+
+          try {
+            def getFilesMatchingRegex(dir: String, regex: util.matching.Regex) = {
+              new java.io.File(dir).listFiles
+                .filter(file => regex.findFirstIn(file.getName).isDefined)
+                .head
+            }
+            val regexp = ".*" + code1.hashCode() +  "\\.java"
+            //println(s"Regular exp for ${fname} is ${regexp}")
+            val mFile = getFilesMatchingRegex("/tmp/catalyst-input", regexp.r)
+            val mFileName = mFile.getPath()
+            //println(s"Kavana ${fname} matched ${mFileName}")
+            val source = scala.io.Source.fromFile(mFile)
+            val lines = try source.mkString finally source.close()
+            code1 = new CodeAndComment(lines,Map[String,String]())
+            val newHc = code1.hashCode()
+            //println(s"MADHU using Custom Java code for ${fname} with HashCode ${newHc}")
+          }
+          catch {
+            case _ : Throwable => {}
+          }
+
+
+
+          val hc1 = code1.hashCode()
+
+          lazy val formatted = CodeFormatter.format(code1)
+
+          //println(s"Kavana cksum for ${fname} is ${hc}")
+          //val sw = new StringWriter
+          //new Exception("Stack trace").printStackTrace(new PrintWriter(sw))
+          //println(sw.toString)
+
+         // if(executorId.equals("1"))
+          {
+            val writer = new PrintWriter(new File(s"/tmp/catalyst-output/${fname}.java" ))
+            writer.write(formatted)
+            writer.close()
+
+            val writer1 = new PrintWriter(new File(s"/tmp/catalyst-output/${fname}.stack" ))
+            new Exception("Stack trace").printStackTrace(writer1)
+            writer1.close()
+          }
+
+
           val startTime = System.nanoTime()
           val result = doCompile(code)
           val endTime = System.nanoTime()

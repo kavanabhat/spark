@@ -579,6 +579,7 @@ case class SortMergeJoinExec(
     val (beforeLoop, condCheck) = if (condition.isDefined) {
       // Split the code of creating variables based on whether it's used by condition or not.
       val loaded = ctx.freshName("loaded")
+      ctx.addMutableState("boolean", loaded, s"$loaded = false;")
       val (leftBefore, leftAfter) = splitVarsByCondition(left.output, leftVars)
       val (rightBefore, rightAfter) = splitVarsByCondition(right.output, rightVars)
       // Generate code for condition
@@ -586,7 +587,7 @@ case class SortMergeJoinExec(
       val cond = BindReferences.bindReference(condition.get, output).genCode(ctx)
       // evaluate the columns those used by condition before loop
       val before = s"""
-           |boolean $loaded = false;
+           |$loaded = false;
            |$leftBefore
          """.stripMargin
 
@@ -605,16 +606,24 @@ case class SortMergeJoinExec(
       (evaluateVariables(leftVars), "")
     }
 
+    val forLoop_sub = ctx.freshName("forLoop")
+    ctx.addNewFunction(forLoop_sub,
+      s"""
+         |private void $forLoop_sub(scala.collection.Iterator<UnsafeRow> iterator) throws java.io.IOException {
+         |  while ($iterator.hasNext()) {
+         |    InternalRow $rightRow = (InternalRow) $iterator.next(); 
+         |    ${condCheck.trim}
+         |    $numOutput.add(1);
+         |    ${consume(ctx, leftVars ++ rightVars)}
+         |  }
+         |}""".stripMargin)
+
+
     s"""
        |while (findNextInnerJoinRows($leftInput, $rightInput)) {
        |  ${beforeLoop.trim}
        |  scala.collection.Iterator<UnsafeRow> $iterator = $matches.generateIterator();
-       |  while ($iterator.hasNext()) {
-       |    InternalRow $rightRow = (InternalRow) $iterator.next();
-       |    ${condCheck.trim}
-       |    $numOutput.add(1);
-       |    ${consume(ctx, leftVars ++ rightVars)}
-       |  }
+       |  $forLoop_sub($iterator);
        |  if (shouldStop()) return;
        |}
      """.stripMargin

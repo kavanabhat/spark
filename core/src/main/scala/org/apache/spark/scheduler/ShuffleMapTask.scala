@@ -76,6 +76,9 @@ private[spark] class ShuffleMapTask(
 
   override def runTask(context: TaskContext): MapStatus = {
     // Deserialize the RDD using the broadcast variable.
+    val q = SparkEnv.get.conf.get("spark.app.name","unknown")
+    DebugMetrics.set(q,"shuffleTask",jobId.getOrElse(-1),stageId, context.taskAttemptId())
+    println(s"ShuffleTask ${jobId} ${stageId} ${context.taskAttemptId()}")
     val threadMXBean = ManagementFactory.getThreadMXBean
     val deserializeStartTime = System.currentTimeMillis()
     val deserializeStartCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
